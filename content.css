@@ -1,0 +1,30 @@
+#modal {
+  /*width: 500px;*/
+  width: auto;
+  border: solid 1px black;
+  position: absolute;
+  background-color: #808080bd;
+  color: black;
+  -webkit-box-shadow: 4px 4px 10px 0px rgba(50, 50, 50, 0.75); 
+  -moz-box-shadow: 4px 4px 10px 0px rgba(50, 50, 50, 0.75);
+  box-shadow: 4px 4px 10px 0px rgba(50, 50, 50, 0.75);
+}
+
+#modal h3 {
+  text-align: center;
+}
+
+#modal .history {
+  margin:3px;
+  background-color: white;
+  font-size: 10px;
+}
+
+#modal .history div[class ^="col-"] {
+  border: solid 1px black;
+}
+
+.row-flex {
+  display: flex;
+  flex-wrap: wrap;
+}
