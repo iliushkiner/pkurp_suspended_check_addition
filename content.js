@@ -4,11 +4,13 @@ var indexeddb = {
   server: 'pkurp-suspended',
   version: 1,
   schema: {
-    reassigns: {
+    suspended: {
       key: { keyPath: 'id', autoIncrement: true },
       // Optionally add indexes
       indexes: {
-        appealNumber: { },
+        appealNumber: { unique: true },
+        visited : { },
+        
       }
     }
   }
@@ -21,13 +23,30 @@ async function getLocalStorageValue(name){
       });
     });
 }
+
+function refreshStatus(){
+    let db = new exDB();
+    db.open(indexeddb, function () {
+        /*db.table("people").query("answer").all().desc().execute(function(r){
+            console.log("all",r);
+        });*/
+        db.suspended.query("appealNumber").all().desc().execute(function(r){
+            console.log("Suspended",r);
+            chrome.runtime.sendMessage({action: 'RefreshIcon', suspended: r});
+        });
+    });                        
+}
+
 (async() => {
     let tmptimeout = await getLocalStorageValue('plg_psca_timeout');
     timeout = (Object.values(tmptimeout).length>0 ? parseInt(Object.values(tmptimeout)[0]) : timeout);
     console.log("timeout:",timeout);
-    let tmpSuspended_Nums = await getLocalStorageValue('suspended_nums');
-    Suspended_Nums = (typeof(tmpSuspended_Nums.suspended_nums) != "undefined" ? tmpSuspended_Nums : Suspended_Nums);
-    chrome.runtime.sendMessage({action: 'RefreshIcon'});
+    
+    /*let tmpSuspended_Nums = await getLocalStorageValue('suspended_nums');
+    Suspended_Nums = (typeof(tmpSuspended_Nums.suspended_nums) != "undefined" ? tmpSuspended_Nums : Suspended_Nums);*/
+    
+    refreshStatus();
+    //chrome.runtime.sendMessage({action: 'RefreshIcon'});
 
   
 setInterval(function (){
@@ -48,8 +67,9 @@ setInterval(function (){
       return result
     }*/
     
-    function getAjaxDataPKURP(Suspended_Nums, suspended_num, url){
+    function getAjaxDataPKURP(suspended_num){
         //var result = ""; //возврат при неасинхронном запуске
+        let url = "http://pkurp-app-balancer-01.prod.egrn/00/requests/"+suspended_num.appealNumber+"/documents?_id=" + suspended_num.appealNumber;
         
         $.ajax({
             url: url,
@@ -73,20 +93,38 @@ setInterval(function (){
                     //Suspended_Nums = {"suspended_nums": [{"appealNum" : appealNum, document_number : []}]};
                     
                     if (typeof(doc_data.document_code) != "undefined" && doc_data.document_code != null && typeof(doc_data.document_code[0]) != "undefined" && doc_data.document_code[0] == "558610800000"){
-                        if(suspended_num.document_number.indexOf(doc_data.document_number)<0){
-                            suspended_num.document_number.push(doc_data.document_number);
+                        if(suspended_num.document_numbers.indexOf(doc_data.document_number)<0){
+                            suspended_num.document_numbers.push(doc_data.document_number);
                             suspended_num.visited = false;
                             saved = false;
                         }
                     }
                 }                
                 if (!saved){
-                    console.log(Suspended_Nums);
-                    chrome.runtime.sendMessage({action: 'Update_Suspended_Nums',suspended_nums: Suspended_Nums.suspended_nums}
+                    /**
+                     * Запись в IndexedDB номера обращения
+                     */
+                    let db = new exDB();
+                    db.open(indexeddb, function () {
+                        if (suspended_num.id === -1){
+                            delete suspended_num.id;
+                            db.table("suspended").add(suspended_num,function(r){
+                                console.log("Добавлена запись в IndexedDB",r);
+                            });
+                        } else {
+                            db.table("suspended").update(suspended_num,function(r){
+                                console.log("Изменеие записи в IndexedDB",r);
+                            });
+                        }
+                    });
+                    //console.log(Suspended_Nums);
+                    /*chrome.runtime.sendMessage({action: 'Update_Suspended_Nums',suspended_nums: Suspended_Nums.suspended_nums}
                         //, function(response){console.log(response.farewell);}
-                    );
+                    );*/
                     //chrome.storage.local.set(Suspended_Nums);
-                    chrome.runtime.sendMessage({action: 'RefreshIcon'});
+                    
+                    //chrome.runtime.sendMessage({action: 'RefreshIcon', suspended: r});
+                    refreshStatus();                    
                 }
             } 
         });
@@ -106,22 +144,41 @@ setInterval(function (){
                 //console.log(data);
                 let regexp = new RegExp('<div class="claims-list-collapse .+?" data-id="(.+?)">','gi');
                 //let match = data.matchAll(patern);
-                while ((matches = regexp.exec(data)) !== null) {
-                    //console.log(`Found ${matches}. Next starts at ${regexp.lastIndex}.`);
-                    console.log(matches[1]);
+                while ((matches = regexp.exec(data)) !== null) {                    
                     //http://pkurp-app-balancer-01.prod.egrn/00/requests/PKPVDMFC-2021-01-28-548444/documents?_id=PKPVDMFC-2021-01-28-548444                    
                     let appealNum = matches[1];//"PKPVDMFC-2021-01-28-548444";
-                    let suspended_num = Suspended_Nums.suspended_nums[appealNum];
-                    if (typeof(suspended_num) == "undefined"){
-                        //reassigned_today.set(reassignReg, {"count": r.length, "percent": reassigned_today.get(reassignReg).percent, "limit": reassigned_today.get(reassignReg).limit});
-                        suspended_num = {"document_number" : [], "visited" : false, "actual" : true};
-                        Suspended_Nums.suspended_nums[appealNum] = suspended_num;
-                        //Suspended_Nums = {"suspended_nums": [appealNum: {document_number : []}]};
-                    } else {
-                        Suspended_Nums.suspended_nums[appealNum].actual = true;
-                    }
-                    let url = "http://pkurp-app-balancer-01.prod.egrn/00/requests/"+appealNum+"/documents?_id=" + appealNum;
-                    getAjaxDataPKURP(Suspended_Nums, suspended_num, url);                    
+                    console.log("appealNumber: ",appealNum);
+                    
+                    let suspended_num = {"appealNumber": appealNum, "document_numbers": [], "visited" : false, "id" : -1};
+                    /**
+                     * Получаем информацию о приостановленном обращение 
+                     */
+                    let db = new exDB();
+                    db.open(indexeddb, function () {
+                                                
+                        db.suspended.query("appealNumber").only(appealNum).execute(function(r){
+                            console.log("SUSPENDED",r);
+                            //if (typeof(suspended_num) == "undefined"){
+                            if (r.length<=0){
+                                suspended_num = {"appealNumber": appealNum, "document_numbers": [], "visited" : false, "id" : -1};
+                            } else {
+                                suspended_num = r[0];
+                            }                    
+                            getAjaxDataPKURP(suspended_num);                    
+                        });
+                        //suspended_num = r.
+                        /*let filter = "return item.reassignReg=='"+reassignReg+"' && item.reassignDate>="+ reassignDate.getTime() +" && item.reassignDate<"+ reasign_end_date.getTime();
+                        //console.log("filter",filter);
+                        db.table("reassigns").query("appealNumber").filter(filter).execute(function(r){
+                            if (r != null){
+                                $(selector).html(r.length);
+                            } else {
+                                $(selector).html("-");
+                            }
+                        });*/
+                    });
+                    
+                    //suspended_num = Suspended_Nums.suspended_nums[appealNum];
                 }
                 console.log("---------------------------------------------")
                 regexp = new RegExp('<ul class="pager">(.+?)</ul>','gi');
@@ -135,11 +192,24 @@ setInterval(function (){
                         /**
                         * Чистим лишние из списка
                         */
-                        $.each(Suspended_Nums.suspended_nums, function(appeal_Nums,suspended_num){ 
+                       let db = new exDB();
+                       db.open(indexeddb, function () {
+                            /*db.table("people").query("answer").all().desc().execute(function(r){
+                                console.log("all",r);
+                            });*/
+                            db.suspended.query("appealNumber").all().desc().execute(function(r){
+                                console.log("Suspended",r);
+                                $.each(r, function(key,suspended){ 
+                                    CheckSuspendedAjax(suspended);
+                                });
+                            });
+                        });
+                       
+                        /*$.each(Suspended_Nums.suspended_nums, function(appeal_Nums,suspended_num){ 
                             if(suspended_num.actual === false){
                                 delete Suspended_Nums.suspended_nums[appeal_Nums];
                             }
-                        });
+                        });*/
                     }
                     
                     while ((matchesnext = regexpnext.exec(matches[1])) !== null) {
@@ -151,6 +221,34 @@ setInterval(function (){
         });
         //return result //возврат при неасинхронном запуске
     }
+    
+    function CheckSuspendedAjax(suspended){
+        //var result = ""; //возврат при неасинхронном запуске
+        let url = "http://pkurp-app-balancer-01.prod.egrn/12/requests/" + suspended.appealNumber + "/obstacles";
+        $.ajax({
+            url: url,
+            dataType: "html",
+            method: "GET",
+            contentType: "text/html; charset=utf-8",
+            async: true,
+            success: function(data) {
+                //console.log("Обращение",data);
+                let regexptmp = new RegExp('<div class="overflow-hidden break-word">(Ожидание дополнительных документов|Создание уведомлений)<\\/div>','gi');
+                //let regexpb = new RegExp('<a rel="next" href="(.+?)">\\d+<\\/a>','gi');
+                    
+                if((matchesb = regexptmp.exec(data)) === null){                
+                    let db = new exDB();
+                    db.open(indexeddb, function () {
+                        db.suspended.remove(suspended.id,function(r){
+                            console.log("Удаление записи в IndexedDB: ",r);
+                        });
+                    });
+                }
+            } 
+        });
+        //return result //возврат при неасинхронном запуске
+    }
+    
     /**
      * Test na obr PKPVDMFC-2021-01-28-548444
      */
@@ -171,13 +269,14 @@ setInterval(function (){
         /**
          * отмечаем все как неактульные
          */
-        $.each(Suspended_Nums.suspended_nums, function(appeal_Nums,suspended_num){ 
+        /*$.each(Suspended_Nums.suspended_nums, function(appeal_Nums,suspended_num){ 
             suspended_num.actual = false;
-        });
+        });*/
         /**
          * Ищем приостановленные обращения
          */
         getAjaxData("http://pkurp-app-balancer-01.prod.egrn/requests?filter=suspended");
+        getAjaxData("http://pkurp-app-balancer-01.prod.egrn/requests?filter=additional_documents");
     }    
 }, timeout);    
 })();
