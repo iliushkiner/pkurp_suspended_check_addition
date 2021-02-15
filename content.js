@@ -233,7 +233,7 @@ setInterval(function (){
             async: true,
             success: function(data) {
                 //console.log("Обращение",data);
-                let regexptmp = new RegExp('<div class="overflow-hidden break-word">(Ожидание дополнительных документов|Создание уведомлений)<\\/div>','gi');
+                let regexptmp = new RegExp('<div class="overflow-hidden break-word">(Ожидание дополнительных документов|Создание уведомлений|Выполнение фоновых задач)<\\/div>','gi');
                 //let regexpb = new RegExp('<a rel="next" href="(.+?)">\\d+<\\/a>','gi');
                     
                 if((matchesb = regexptmp.exec(data)) === null){                
@@ -241,6 +241,7 @@ setInterval(function (){
                     db.open(indexeddb, function () {
                         db.suspended.remove(suspended.id,function(r){
                             console.log("Удаление записи в IndexedDB: ",r);
+                            refreshStatus();
                         });
                     });
                 }
