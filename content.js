@@ -224,7 +224,7 @@ setInterval(function (){
     
     function CheckSuspendedAjax(suspended){
         //var result = ""; //возврат при неасинхронном запуске
-        let url = "http://pkurp-app-balancer-01.prod.egrn/12/requests/" + suspended.appealNumber + "/obstacles";
+        let url = "http://pkurp-app-balancer-01.prod.egrn/12/requests/" + suspended.appealNumber + "/validations_views/statements";
         $.ajax({
             url: url,
             dataType: "html",
@@ -237,9 +237,11 @@ setInterval(function (){
                 //let regexpb = new RegExp('<a rel="next" href="(.+?)">\\d+<\\/a>','gi');
                     
                 if((matchesb = regexptmp.exec(data)) === null){                
+                    let regexptmptmp = new RegExp('<div class="overflow-hidden break-word">(.+?)<\\/div>','gi');
+                    console.log("RegExp matches: ",regexptmptmp.exec(data));
                     let db = new exDB();
                     db.open(indexeddb, function () {
-                        db.suspended.remove(suspended.id,function(r){
+                        db.suspended.remove(suspended.id,function(r){                            
                             console.log("Удаление записи в IndexedDB: ",r);
                             refreshStatus();
                         });
